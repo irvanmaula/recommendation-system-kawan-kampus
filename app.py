@@ -2,7 +2,10 @@ from fastapi import FastAPI
 from fastapi import Form
 from pydantic import BaseModel
 
-from recommender import recommend_places
+from recommender import (
+    recommend_places,
+    recommend_all_categories
+)
 
 app = FastAPI(
     title="Kawan Kampus Recommendation API"
@@ -22,6 +25,15 @@ class RecommendationRequest(BaseModel):
 
     top_n: int = 10
 
+class RecommendationAllRequest(
+    BaseModel
+):
+
+    kampus: str
+
+    kategori_jarak: str
+
+    top_n: int = 10
 
 # ==================================
 # HEALTH CHECK
@@ -60,14 +72,33 @@ def recommend(
 
     )
 
-    if isinstance(
-        hasil,
-        str
-    ):
-        return {
-            "message": hasil
-        }
+    if isinstance(hasil, dict):
+        return hasil
 
     return hasil.to_dict(
         orient="records"
     )
+
+# ==================================
+# RECOMMENDATION
+# ==================================
+
+@app.post("/recommend/all")
+def recommend_all(
+
+    request:
+    RecommendationAllRequest
+
+):
+
+    hasil = recommend_all_categories(
+
+        kampus=request.kampus,
+
+        kategori_jarak=request.kategori_jarak,
+
+        top_n=request.top_n
+
+    )
+
+    return hasil

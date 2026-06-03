@@ -3,13 +3,13 @@ import numpy as np
 import tensorflow as tf
 import joblib
 from tensorflow.keras import layers
-
+from sklearn.metrics.pairwise import cosine_similarity
 # ==================================
 # LOAD DATA
 # ==================================
 
 data = pd.read_csv(
-    "data/cleaned_places.csv"
+    "data/kawankampus_master_dataset.csv"
 )
 
 class FeatureInteractionLayer(layers.Layer):
@@ -115,6 +115,14 @@ tfidf = joblib.load(
     "models/tfidf.pkl"
 )
 
+search_tfidf = joblib.load(
+    'models/search_tfidf.pkl'
+)
+
+search_matrix = joblib.load(
+    'models/search_matrix.pkl'
+)
+
 # ==================================
 # FEATURE COLUMNS
 # ==================================
@@ -146,37 +154,66 @@ feature_columns = (
 )
 
 
-kategori_mapping = {
-    'Makanan': [
-        'Makanan',
-        'Makanan Siap Saji',
-        'Cafe',
-        'Kedai',
-        'Kedai Kopi',
-        'Pizza',
-        'Restoran',
-        'Restoran Padang',
-        'Toko Es Krim',
-        'Warteg'
-    ],
+def search_similar_places(
 
-    'Belanja': [
-        'Minimarket'
-    ],
+    query,
 
-    'Kesehatan': [
-        'Apotek',
-        'Tempat Fitness'
-    ],
+    top_n=10
 
-    'Transportasi': [
-        'Perhentian Bus'
-    ],
-    'Cetak': [
-        'Fotokopi',
-        'Print'
+):
+
+    query_vector = (
+
+        search_tfidf.transform(
+            [query]
+        )
+
+    )
+
+    similarities = (
+
+        cosine_similarity(
+
+            query_vector,
+
+            search_matrix
+
+        )
+
+        .flatten()
+
+    )
+
+    top_indices = (
+
+        similarities.argsort()
+
+        [-top_n:]
+
+        [::-1]
+
+    )
+
+    result = data.iloc[
+        top_indices
+    ].copy()
+
+    result[
+        "similarity"
+    ] = similarities[
+        top_indices
     ]
-}
+
+    return result[[
+        "Nama_Tempat",
+        "Kategori_Awal",
+        "Rating",
+        "Total_Reviews",
+        "Jarak_KM",
+        "Google_Maps_Link",
+        "similarity"
+
+    ]]
 
 
 def recommend_places(
@@ -187,11 +224,6 @@ def recommend_places(
     top_n=10
 
 ):
-
-    kategori_list = kategori_mapping.get(
-        kategori,
-        [kategori]
-    )
 
     filtered = data[
 
@@ -204,8 +236,10 @@ def recommend_places(
 
         &
 
-        data['Kategori_Awal']
-        .isin(kategori_list)
+        (
+            data['Kategori_Awal']
+            == kategori
+        )
 
         &
 
@@ -218,33 +252,45 @@ def recommend_places(
 
     ].copy()
 
+    # ==================================
+    # FALLBACK
+    # ==================================
+
     if filtered.empty:
 
-        return "Tidak ada rekomendasi"
+        fallback_result = search_similar_places(
 
-    # ======================
+            query=kategori,
+
+            top_n=top_n
+
+        )
+
+        return {
+
+            "message":
+            f"Kategori '{kategori}' tidak ditemukan. Berikut rekomendasi yang mirip.",
+
+            "fallback": True,
+
+            "data":
+            fallback_result.to_dict(
+                orient="records"
+            )
+
+        }
+
+    # ==================================
+    # LANJUTKAN MODEL REKOMENDASI
+    # ==================================
+
     # TF-IDF
-    # ======================
-
     filtered['combined_features'] = (
-
-        filtered['Kategori_Awal']
-        .astype(str)
-
-        + ' '
-
-        +
-
-        filtered['Kategori_Jarak']
-        .astype(str)
-
-        + ' '
-
-        +
-
-        filtered['Kampus']
-        .astype(str)
-
+        filtered['Kategori_Awal'].astype(str)
+        + ' ' +
+        filtered['Kategori_Jarak'].astype(str)
+        + ' ' +
+        filtered['Kampus'].astype(str)
     )
 
     filtered_tfidf = tfidf.transform(
@@ -393,3 +439,43 @@ def recommend_places(
     "recommendation_score"
 
 ]].head(top_n)
+
+def recommend_all_categories(
+    kampus,
+    kategori_jarak,
+    top_n=10
+):
+
+    results = {}
+
+    categories = sorted(
+        data["Kategori_Awal"]
+        .dropna()
+        .unique()
+    )
+
+    for kategori in categories:
+
+        hasil = recommend_places(
+
+            kampus=kampus,
+
+            kategori=kategori,
+
+            kategori_jarak=kategori_jarak,
+
+            top_n=top_n
+
+        )
+
+        if (
+            not isinstance(hasil,str)
+            and
+            not hasil.empty
+        ):
+
+            results[kategori] = hasil.to_dict(
+                orient="records"
+            )
+
+    return results
