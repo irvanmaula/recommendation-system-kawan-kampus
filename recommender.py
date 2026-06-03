@@ -155,74 +155,75 @@ feature_columns = (
 
 
 def search_similar_places(
-
+    kampus,
     query,
-
     top_n=10
-
 ):
 
     query_vector = (
-
         search_tfidf.transform(
             [query]
         )
-
     )
 
     similarities = (
-
         cosine_similarity(
-
             query_vector,
-
             search_matrix
-
         )
-
         .flatten()
-
     )
 
-    top_indices = (
+    result = data.copy()
 
-        similarities.argsort()
+    result["similarity"] = similarities
 
-        [-top_n:]
-
-        [::-1]
-
-    )
-
-    result = data.iloc[
-        top_indices
-    ].copy()
-
-    result[
-        "similarity"
-    ] = similarities[
-        top_indices
+    result = result[
+        result["Kampus"]
+        .str.contains(
+            kampus,
+            case=False,
+            na=False
+        )
     ]
 
+    result = result.sort_values(
+        by="similarity",
+        ascending=False
+    )
+
+    if result.empty:
+        return pd.DataFrame()
+
+    if result["similarity"].max() <= 0:
+        return pd.DataFrame()
+
     return result[[
+
         "Nama_Tempat",
+
         "Kategori_Awal",
+
+        "Kampus",
+
         "Rating",
+
         "Total_Reviews",
+
         "Jarak_KM",
+
         "Google_Maps_Link",
+
         "similarity"
 
-    ]]
-
+    ]].head(top_n)
 
 def recommend_places(
-
     kampus,
     kategori,
     kategori_jarak,
-    top_n=10
-
+    top_n=10,
+    use_fallback=True
 ):
 
     filtered = data[
@@ -257,28 +258,7 @@ def recommend_places(
     # ==================================
 
     if filtered.empty:
-
-        fallback_result = search_similar_places(
-
-            query=kategori,
-
-            top_n=top_n
-
-        )
-
-        return {
-
-            "message":
-            f"Kategori '{kategori}' tidak ditemukan. Berikut rekomendasi yang mirip.",
-
-            "fallback": True,
-
-            "data":
-            fallback_result.to_dict(
-                orient="records"
-            )
-
-        }
+        return pd.DataFrame()
 
     # ==================================
     # LANJUTKAN MODEL REKOMENDASI
@@ -457,25 +437,21 @@ def recommend_all_categories(
     for kategori in categories:
 
         hasil = recommend_places(
-
             kampus=kampus,
-
             kategori=kategori,
-
             kategori_jarak=kategori_jarak,
-
-            top_n=top_n
-
+            top_n=top_n,
+            use_fallback=False
         )
 
-        if (
-            not isinstance(hasil,str)
-            and
-            not hasil.empty
+        if isinstance(
+            hasil,
+            dict
         ):
+            continue
 
+        if not hasil.empty:
             results[kategori] = hasil.to_dict(
                 orient="records"
             )
-
     return results

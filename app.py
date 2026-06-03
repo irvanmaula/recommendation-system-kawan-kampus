@@ -2,9 +2,11 @@ from fastapi import FastAPI
 from fastapi import Form
 from pydantic import BaseModel
 
+
 from recommender import (
     recommend_places,
-    recommend_all_categories
+    recommend_all_categories,
+    search_similar_places
 )
 
 app = FastAPI(
@@ -25,6 +27,7 @@ class RecommendationRequest(BaseModel):
 
     top_n: int = 10
 
+
 class RecommendationAllRequest(
     BaseModel
 ):
@@ -33,6 +36,11 @@ class RecommendationAllRequest(
 
     kategori_jarak: str
 
+    top_n: int = 10
+
+class SearchRequest(BaseModel):
+    kampus: str
+    query: str
     top_n: int = 10
 
 # ==================================
@@ -80,7 +88,7 @@ def recommend(
     )
 
 # ==================================
-# RECOMMENDATION
+# RECOMMENDATION ALL
 # ==================================
 
 @app.post("/recommend/all")
@@ -102,3 +110,33 @@ def recommend_all(
     )
 
     return hasil
+
+# =================================
+# SEARCH PLACE
+# =================================
+
+@app.post("/search")
+
+def search(
+    request: SearchRequest
+):
+    result = search_similar_places(
+        kampus=request.kampus,
+        query=request.query,
+        top_n=request.top_n
+    )
+
+    if result.empty:
+        return {
+            "message":
+            "Tempat yang dicari tidak ditemukan."
+        }
+
+    return {
+        "message":
+        "Hasil pencarian ditemukan.",
+        "data":
+        result.to_dict(
+            orient="records"
+        )
+    }
